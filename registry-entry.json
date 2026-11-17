@@ -1,0 +1,9 @@
+{
+  "package": "magpie-freepool",
+  "name": "免费池 FreePool",
+  "providers": ["llm7", "nararoute", "xkiro", "sambanova", "cohere", "huggingface"],
+  "summary": {
+    "en": "Six free-tier vendors magpie has no preset for — LLM7, NaraRoute, xKiro, SambaNova, Cohere and Hugging Face — each its own provider card, with per-account model discovery and paste-a-key sign-in.",
+    "zh": "六家含免费额度、而 magpie 内置预设里没有的渠道：LLM7、NaraRoute、xKiro、SambaNova、Cohere、Hugging Face。每家一张卡、各存各的 key，模型目录按账号实时拉取。"
+  }
+}
