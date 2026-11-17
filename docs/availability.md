@@ -27,7 +27,7 @@
 | ollama-cloud | 200 | 24 | 401 | 未测 | 未测 | 目录免 key，对话要 key |
 | nvidia | 200 | 32 | 401 | 未测 | 未测 | 目录免 key，对话要 key |
 
-_生成时间：2026-11-17T12:31:14.399Z（`node scripts/probe-vendors.mjs --write`）_
+_生成时间：2026-11-17T12:38:28.023Z（`node scripts/probe-vendors.mjs --write`）_
 
 <!-- probe:end -->
 

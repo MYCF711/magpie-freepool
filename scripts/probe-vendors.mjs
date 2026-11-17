@@ -18,7 +18,7 @@ import { VENDOR_LIST } from "../src/vendors.mjs"
 const START = "<!-- probe:start -->"
 const END = "<!-- probe:end -->"
 const DOC = new URL("../docs/availability.md", import.meta.url)
-const TIMEOUT = 15_000
+const TIMEOUT = 30_000
 
 function envKey(vendor) {
   const name = vendor.id.toUpperCase().replace(/-/g, "_") + "_API_KEY"
@@ -51,7 +51,7 @@ async function probeList(vendor, key) {
   }
 }
 
-async function probeChat(vendor, key) {
+async function probeChatOnce(vendor, key) {
   const model = (vendor.seed || [])[0]
   if (!model) return "—"
   const base = vendor.base.replace("{account}", "probe")
@@ -69,9 +69,17 @@ async function probeChat(vendor, key) {
     if (res.status === 429) return "429（额度用尽，非缺凭据）"
     if (res.status === 401 || res.status === 403) return String(res.status)
     return `${res.status} ${text.slice(0, 40).replace(/\|/g, "/")}`
-  } catch (error) {
+    } catch (error) {
     return /Timeout/i.test(String(error?.name)) ? "TIMEOUT" : "NET"
   }
+}
+
+/** 对话探针：冷启动经常超过 30 秒（llm7 实测），失败一次重试一次再下结论 */
+async function probeChat(vendor, key) {
+  const first = await probeChatOnce(vendor, key)
+  if (first !== "TIMEOUT" && first !== "NET") return first
+  const second = await probeChatOnce(vendor, key)
+  return second === first ? first : second
 }
 
 const verdict = (row) => {
