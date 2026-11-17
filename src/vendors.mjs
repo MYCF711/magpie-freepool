@@ -294,15 +294,20 @@ export function entryOf(vendor, upstreamId, { name, context, maxOutput, vision =
 }
 
 /** 兜底目录：每家一条 seed，只在「一次都没成功拉到过」时使用 */
+/** 一家的 seed（未配 key 的渠道要不要出现在列表里，由 models 钩子按选项决定） */
+export function seedModelsOf(vendor, account = "") {
+  const out = {}
+  for (const upstreamId of vendor.seed || []) {
+    // 需要 key 的渠道在名字里写清楚：用户一眼能看出哪几家还不能用
+    const name = vendor.keyless ? undefined : `${upstreamId} · 需 key`
+    const entry = entryOf(vendor, upstreamId, { name, account })
+    out[entry.id] = entry
+  }
+  return out
+}
+
 export function seedModels(account = "") {
   const out = {}
-  for (const vendor of VENDOR_LIST) {
-    for (const upstreamId of vendor.seed || []) {
-      // 需要 key 的渠道在名字里写清楚：未登录时用户一眼能看出哪几家还不能用
-      const name = vendor.keyless ? undefined : `${upstreamId} · 需 key`
-      const entry = entryOf(vendor, upstreamId, { name, account })
-      out[entry.id] = entry
-    }
-  }
+  for (const vendor of VENDOR_LIST) Object.assign(out, seedModelsOf(vendor, account))
   return out
 }

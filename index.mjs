@@ -28,7 +28,9 @@ import {
   PROVIDER_NAME,
   VENDORS,
   VENDOR_IDS,
+  VENDOR_LIST,
   seedModels,
+  seedModelsOf,
   vendorOfModel,
   vendorOfUrl,
 } from "./src/vendors.mjs"
@@ -246,14 +248,14 @@ export const FreepoolAuthPlugin = async (_ctx = {}, _options = {}) => {
         const parsed = parseKeys(rawCredentialOf(input.auth))
         const models = await modelsFor(parsed)
 
-        // 选项在使用点实时读（切换开关只重拉模型列表，不重跑工厂）
+        // 选项在使用点实时读（切换开关只重拉模型列表，不重跑工厂）。
+        // 开着：把「还没配 key 的那几家」也摆出来，名字带「需 key」—— 用户能看到自己还能解锁什么；
+        // 关掉：只列当前真能调用的渠道，列表更干净。
         const hint = input.magpie?.option?.(PROVIDER, "key_hint") !== false
         if (hint) {
-          for (const [id, entry] of Object.entries(models)) {
-            const vendor = vendorOfModel(id)?.vendor
-            if (vendor && !hasKey(parsed, vendor.id) && !String(entry.name).includes("需 key")) {
-              entry.name = `${entry.name} · 需 key`
-            }
+          for (const vendor of VENDOR_LIST) {
+            if (hasKey(parsed, vendor.id)) continue
+            Object.assign(models, seedModelsOf(vendor, parsed.account))
           }
         }
         return models

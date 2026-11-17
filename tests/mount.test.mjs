@@ -97,13 +97,15 @@ test("插件选项 key_hint：placement 只认字符串 top，且默认开", asy
   assert.ok(/LLM7/.test(opt.description) && /Kilo/.test(opt.description), "说明里要写清谁免 key")
 })
 
-test("选项关掉时不加「需 key」，开着时缺 key 的家会被标出", async () => {
+test("选项开着才有「需 key」的家；关掉只剩当前真能调的渠道", async () => {
   const hooks = await plugin()
   const on = await hooks.provider.models({}, { auth: null, magpie: { option: () => true } })
   const off = await hooks.provider.models({}, { auth: null, magpie: { option: () => false } })
   const withMark = Object.entries(on).filter(([, m]) => String(m.name).includes("需 key"))
   const offMark = Object.entries(off).filter(([, m]) => String(m.name).includes("需 key"))
+  assert.ok(withMark.length >= 12, "开着时缺 key 的 12 家都要摆出来（每家一条 seed）")
   assert.equal(offMark.length, 0, "关掉后模型名不带标记")
+  assert.ok(Object.keys(on).length > Object.keys(off).length, "开着比关掉多出「还没解锁」的那批")
 
   // 免 key 的三家即使开着也不该被标
   for (const id of ["llm7", "kilo", "opencode-zen"]) {
