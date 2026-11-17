@@ -102,6 +102,23 @@ export const FreepoolAuthPlugin = async (_ctx = {}, _options = {}) => {
       // ⚠ 刻意不写 authorize、不写 prompts：宿主只把 prompts 的答案交给 authorize，
       //   输入框里的值进不到插件里；没有 authorize 时它直接存 `{ type: "api", key }`，
       //   而我们要的正是「原样存下这串 key」。
+      // 插件选项：一个真的会改变模型名的开关（不是摆设）。说明文字就是领取入口索引。
+      // ⚠ placement 只认字符串 "top"（0.1.2985 起生效）；值必须在**使用点**实时读，不能缓存在工厂里。
+      options: [
+        {
+          key: "key_hint",
+          label: "标出还没配 key 的渠道",
+          description:
+            "开着：模型名后面加「需 key」，一眼看出哪几家还没登录。关掉只按渠道分组显示。免 key 的只有 LLM7 / Kilo（kilo-auto/free）/ OpenCode Zen；其余 12 家去各自官网领 key，地址见 README 的渠道表。",
+          default: true,
+          labels: { en: "Mark vendors still missing a key" },
+          descriptions: {
+            en: "On: append \"· 需 key\" to models of vendors you have not configured yet. Keyless today: LLM7, Kilo (kilo-auto/free), OpenCode Zen; the other 12 need a key from each vendor's console.",
+          },
+          placement: "top",
+        },
+      ],
+
       methods: [
         {
           type: "api",
@@ -225,9 +242,21 @@ export const FreepoolAuthPlugin = async (_ctx = {}, _options = {}) => {
     provider: {
       id: PROVIDER,
 
-      async models(provider, { auth } = {}) {
-        const parsed = parseKeys(rawCredentialOf(auth))
-        return modelsFor(parsed)
+      async models(provider, input = {}) {
+        const parsed = parseKeys(rawCredentialOf(input.auth))
+        const models = await modelsFor(parsed)
+
+        // 选项在使用点实时读（切换开关只重拉模型列表，不重跑工厂）
+        const hint = input.magpie?.option?.(PROVIDER, "key_hint") !== false
+        if (hint) {
+          for (const [id, entry] of Object.entries(models)) {
+            const vendor = vendorOfModel(id)?.vendor
+            if (vendor && !hasKey(parsed, vendor.id) && !String(entry.name).includes("需 key")) {
+              entry.name = `${entry.name} · 需 key`
+            }
+          }
+        }
+        return models
       },
     },
   }

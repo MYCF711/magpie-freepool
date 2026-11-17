@@ -42,6 +42,13 @@ magpie plugin add github:MYCF711/magpie-freepool
 后 8 家 magpie 也有内置预设（`magpie provider add <preset> <key>`）。两条路可以并存：
 预设是「一家一张卡」，这里是「15 家一张卡 + 一次粘贴」。哪种顺手用哪种，key 不互通、互不覆盖。
 
+## 插件选项：标出还没配 key 的渠道
+
+供应商卡片顶部的开关（默认开）：开着时，你还没配 key 的那几家，模型名后面带「· 需 key」；关掉就只按渠道分组显示。
+说明文字里写了当前**免 key 的三家**（LLM7 / Kilo 的 `kilo-auto/free` / OpenCode Zen），其余 12 家去各自官网领 —— 地址见下面渠道表，也见错误文案里那句「去 xxx 领一把」。
+
+实测证据（每次自检轮重跑并回写）：[docs/availability.md](./docs/availability.md)
+
 ## 一次粘贴长什么样
 
 ```

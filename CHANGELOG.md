@@ -1,5 +1,14 @@
 # 更新记录
 
+## 0.1.3 — 2026-11-17
+
+- **插件选项 `key_hint`（默认开，置顶）**：开着时把「你还没配 key 的渠道」在模型名后标出「· 需 key」，
+  开关的说明文字直接写清谁免 key（LLM7 / Kilo `kilo-auto/free` / OpenCode Zen）、其余去哪领。
+  选项在使用点实时读，切换即生效；关掉则只按渠道分组显示。
+- **新增 [docs/availability.md](./docs/availability.md)**：15 家逐条的实测证据表（免 key / 有 key 两栏），
+  标注口径与复查方式；「有 key」一栏如实写「未测」，不编造。
+- 说明：本机出口被挡的三家（cohere 403、groq 403、HF/mistral/gemini 不可达）也如实记录，不删除表项。
+
 ## 0.1.2 — 2026-11-17
 
 - **只列真能用的模型**：过滤 embedding / rerank / 语音 / 生图类 id（选中必报错的那些）。

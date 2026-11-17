@@ -84,6 +84,34 @@ test("loader 不给 baseURL（分流靠模型 api.url），但带出站 UA", asy
   assert.equal(typeof out.fetch, "function")
 })
 
+test("插件选项 key_hint：placement 只认字符串 top，且默认开", async () => {
+  const hooks = await plugin()
+  const options = hooks.auth.options
+  assert.ok(Array.isArray(options) && options.length >= 1)
+  const opt = options.find((o) => o.key === "key_hint")
+  assert.ok(opt, "key_hint 必须存在")
+  assert.equal(opt.placement, "top")
+  assert.equal(opt.default, true)
+  assert.equal(typeof opt.label, "string")
+  assert.ok(opt.description.length <= 300, "description ≤300")
+  assert.ok(/LLM7/.test(opt.description) && /Kilo/.test(opt.description), "说明里要写清谁免 key")
+})
+
+test("选项关掉时不加「需 key」，开着时缺 key 的家会被标出", async () => {
+  const hooks = await plugin()
+  const on = await hooks.provider.models({}, { auth: null, magpie: { option: () => true } })
+  const off = await hooks.provider.models({}, { auth: null, magpie: { option: () => false } })
+  const withMark = Object.entries(on).filter(([, m]) => String(m.name).includes("需 key"))
+  const offMark = Object.entries(off).filter(([, m]) => String(m.name).includes("需 key"))
+  assert.equal(offMark.length, 0, "关掉后模型名不带标记")
+
+  // 免 key 的三家即使开着也不该被标
+  for (const id of ["llm7", "kilo", "opencode-zen"]) {
+    const hit = withMark.find(([modelId]) => modelId.startsWith(id + "/"))
+    assert.equal(hit, undefined, `${id} 免 key，不该被标`)
+  }
+})
+
 test("usage 存在（读 xkiro），checkin 是 inactive", async () => {
   const hooks = await plugin()
   assert.equal(typeof hooks.auth.usage, "function")
