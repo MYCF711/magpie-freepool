@@ -41,6 +41,7 @@ export const KEY_FORMAT = "groq=gsk_…;openrouter=sk-or-…"
  *   parse       目录解析器名
  *   sanitize    请求体清洗器名
  *   quota       有额度接口
+ *   freeMatch   没配 key 时只列这批 id（免 key 渠道里付费档混在一起的过滤）
  *   accountKey  key 要写成 `<account>:<token>`（Cloudflare 的 account id）
  */
 export const VENDORS = {
@@ -156,6 +157,8 @@ export const VENDORS = {
     keyUrl: "https://kilo.ai",
     // 实测：kilo-auto/free 不带任何凭据也回 200 并给出正文（付费档才要登录）
     keyless: true,
+    // 没配 key 时只列免费档：这个网关 469 个模型里绝大多数要登录，列出来选中必 401
+    freeMatch: /^kilo-auto\//,
     parse: "openai",
     seed: ["kilo-auto/free"],
     note: "kilo-auto/free 走免费档",
@@ -167,8 +170,9 @@ export const VENDORS = {
     keyUrl: "https://opencode.ai/auth",
     // 实测：免费模型不带凭据也能调（返回 429 是「免费额度用尽」，不是缺凭据）
     keyless: true,
+    freeMatch: /(-free$)|(^big-pickle$)/i,
     parse: "openai",
-    seed: ["gpt-5.3-codex"],
+    seed: ["deepseek-v4.1-flash-free"],
     note: "Zen 的免费模型",
   },
   "ollama-cloud": {

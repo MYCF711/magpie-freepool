@@ -1,5 +1,12 @@
 # 更新记录
 
+## 0.1.2 — 2026-11-17
+
+- **只列真能用的模型**：过滤 embedding / rerank / 语音 / 生图类 id（选中必报错的那些）。
+- **免 key 渠道只列免费档**：Kilo 的 469 个模型里绝大多数要登录，没配 key 时只列 `kilo-auto/*`；
+  OpenCode Zen 只列 `*-free` 与 `big-pickle`。模型数从 606 收到「装完就能真跑」的那批。
+- OpenCode Zen 的 seed 换成实测存在的免费 id `deepseek-v4.1-flash-free`。
+
 ## 0.1.1 — 2026-11-17
 
 - **三家免 key 渠道自动生效**：实测 `llm7`（chat 层无凭据 200）、`kilo`（`kilo-auto/free` 无凭据 200）、

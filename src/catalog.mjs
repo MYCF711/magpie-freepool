@@ -13,6 +13,19 @@ const LIST_TIMEOUT_MS = 15_000
 
 const num = (v) => (Number.isFinite(Number(v)) && Number(v) > 0 ? Number(v) : undefined)
 
+/** 不像 chat 模型的 id：embedding / rerank / 语音 / 生图 —— 列出来选中必报错 */
+const NOT_CHAT = /embed|rerank|tts|whisper|moderation/i
+const IMAGE_LIKE = /(^|[-_/])(image|imagen|imagine|dall-e|flux|seedream|cogview|sdxl|stable-diffusion|wanx|kolors|banana)/i
+
+/** 一条上游模型能不能进 magpie 的模型表（形状对但选不得的东西不列） */
+function usable(id) {
+  const value = String(id || "").trim()
+  if (!value) return false
+  if (NOT_CHAT.test(value)) return false
+  if (IMAGE_LIKE.test(value)) return false
+  return true
+}
+
 // ── 快照 ────────────────────────────────────────────────────────────
 
 export function snapshotFile() {
@@ -61,8 +74,9 @@ function parseOpenAI(raw) {
   const rows = Array.isArray(raw?.data) ? raw.data : Array.isArray(raw?.models) ? raw.models : []
   return rows
     .map((item) => {
+
       const id = String(item?.id ?? item?.model ?? "").trim()
-      if (!id) return null
+      if (!usable(id)) return null
       return {
         id,
         name: String(item?.display_name ?? item?.name ?? id),
@@ -177,7 +191,9 @@ export async function fetchVendorModels(vendor, key, account = "") {
   const raw = await res.json().catch(() => null)
   if (!raw) throw new Error(`${vendor.label} 返回的不是 JSON`)
 
-  const rows = (PARSERS[vendor.parse] || parseOpenAI)(raw)
+  let rows = (PARSERS[vendor.parse] || parseOpenAI)(raw).filter((row) => usable(row.id))
+  // 免 key 渠道里付费档混在一起：没配 key 时只列实测能免凭据调用的那批
+  if (vendor.keyless && !key && vendor.freeMatch) rows = rows.filter((row) => vendor.freeMatch.test(row.id))
   if (!rows.length) throw new Error(`${vendor.label} 没有可用的 chat 模型`)
 
   const out = {}

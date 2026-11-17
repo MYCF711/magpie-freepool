@@ -112,7 +112,9 @@ test("fetchAllModels：一家的 key 坏了不影响其他家（逐家收结果�
   const stub = async (url) => {
     if (String(url).includes("groq.com")) return json({ error: { message: "invalid key" } }, 401)
     if (String(url).includes("sambanova")) return json({ data: [{ id: "GLM-5.3", context_length: 131072 }] })
-    return json({ data: [{ id: "x", model_type: "chat", stream: true, tools_calling: true }] })
+    if (String(url).includes("kilo.ai")) return json({ data: [{ id: "kilo-auto/free" }] })
+    if (String(url).includes("opencode.ai")) return json({ data: [{ id: "deepseek-v4.1-flash-free" }] })
+    return json({ data: [{ id: "DeepSeek-V4-Flash-0731", model_type: "chat", stream: true, tools_calling: true }] })
   }
   const parsed = parseKeys("groq=gsk_bad;sambanova=sn_ok;llm7=lm")
   const result = await withFetch(stub, () => fetchAllModels(parsed))
@@ -122,7 +124,8 @@ test("fetchAllModels：一家的 key 坏了不影响其他家（逐家收结果�
   assert.ok(result.ok.includes("llm7"))
   assert.ok(result.models["sambanova/GLM-5.3"], "成功的那家必须进表")
   assert.equal(result.models["groq/llama-3.3-70b-versatile"], undefined, "失败的家不能拿 seed 冒充 live")
-  assert.ok(result.skipped.includes("xkiro"), "没配 key 的家直接跳过，不去打上游")
+  assert.ok(result.skipped.includes("xkiro"), "没配 key 且不免 key 的家直接跳过，不去打上游")
+  assert.ok(!result.skipped.includes("kilo"), "免 key 的家不会被跳过")
 })
 
 test("fetchVendorModels：nararoute 的目录请求不带 Authorization（带了就 401）", async () => {
