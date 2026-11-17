@@ -1,7 +1,7 @@
 {
   "name": "magpie-freepool",
   "version": "0.1.0",
-  "description": "Seven free-tier AI vendors magpie has no preset for — LLM7, NaraRoute, xKiro, SambaNova, Cohere, Hugging Face and Cloudflare Workers AI — each as its own provider card, with live model discovery.",
+  "description": "One card, fifteen free-tier AI vendors: paste every key you have once (llm7 needs none) and pick any of their models from magpie. Models route by prefix — llm7/…, groq/…, xkiro/… — each entry pointing at its own upstream.",
   "type": "module",
   "main": "./index.mjs",
   "exports": "./index.mjs",
@@ -39,13 +39,23 @@
     "auth",
     "free",
     "free-tier",
+    "aggregate",
+    "gateway",
     "llm7",
     "nararoute",
     "xkiro",
     "sambanova",
     "cohere",
     "huggingface",
-    "cloudflare"
+    "cloudflare",
+    "groq",
+    "mistral",
+    "gemini",
+    "openrouter",
+    "kilo",
+    "opencode-zen",
+    "ollama-cloud",
+    "nvidia"
   ],
   "license": "AGPL-3.0-only",
   "engines": {

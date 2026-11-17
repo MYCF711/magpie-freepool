@@ -1,147 +1,207 @@
-// tests/mount.test.mjs —— 入口 / 钩子挂载契约（六供应商版）
+// tests/mount.test.mjs —— 聚合入口的钩子契约
 //
-// 一个包六个供应商：magpie 把**每个具名导出**都当插件工厂调用，所以这里逐个验：
-//   ① 导出只有六个、都以 Plugin 结尾、都是 async 函数
-//   ② 每个插件只注册自己的 provider，config.models 未登录也非空（铁律 1）
-//   ③ 登录方式只有一条 api 型，且**没有 authorize**（没有它宿主才会原样存 `{type:"api",key}`）
-//   ④ loader 给 baseURL / fetch；没有 key 且这家必须要 key 时返回 {}
-//   ⑤ 只有 xkiro 注册 usage（其余五家没有额度接口 → 不画假进度条）
-//   ⑥ checkin 一律 inactive（这六家都没有签到）
-//   ⑦ 六张卡片的图标互不相同（同一屏并排，靠它区分站点）
+// 一张卡 15 家：这里验的是「聚合之后仍然只注册一个 provider」以及每个钩子的形状：
+//   ① 入口只导出一个插件工厂（magpie 会把每个函数导出都当插件）
+//   ② config 只注册 `freepool`，models 非空（铁律 1），每条条目的 api.url 指向自己的上游
+//   ③ 登录是一条 api 型、**没有 authorize**（有它宿主就会丢掉输入框里的 key）
+//   ④ loader 不给 baseURL（分流靠模型条目的 api.url），但给 fetch + UA
+//   ⑤ usage 存在（读 xkiro），checkin 一律 inactive
+//   ⑥ 未知模型前缀回 404（只搁置那个模型），缺某家 key 回 401 + kept（不标整张卡）
 //
-// 全部离线：不打上游、不需要 magpie 进程、不写任何缓存。
+// 全部离线：不打上游、不写缓存。
 
 import test from "node:test"
 import assert from "node:assert/strict"
 
 import * as entry from "../index.mjs"
-import { SITES, SITE_LIST } from "../src/sites.mjs"
+import { FreepoolAuthPlugin } from "../index.mjs"
+import { PROVIDER, VENDORS, VENDOR_IDS, VENDOR_LIST, seedModels, vendorOfModel } from "../src/vendors.mjs"
 
-/** 与站点表一一对应的导出名（顺序即导出顺序） */
-const EXPECTED = [
-  ["Llm7AuthPlugin", "llm7"],
-  ["NararouteAuthPlugin", "nararoute"],
-  ["XkiroAuthPlugin", "xkiro"],
-  ["SambanovaAuthPlugin", "sambanova"],
-  ["CohereAuthPlugin", "cohere"],
-  ["HuggingfaceAuthPlugin", "huggingface"],
-]
+const plugin = async (ctx = {}) => FreepoolAuthPlugin(ctx)
 
-test("导出：六个，全部以 Plugin 结尾，全部是 async 函数", () => {
-  const names = Object.keys(entry).filter((key) => typeof entry[key] === "function")
-  assert.deepEqual(names.sort(), EXPECTED.map(([name]) => name).sort())
-  for (const name of names) {
-    assert.match(name, /Plugin$/, `${name} 必须以 Plugin 结尾（magpie 只认具名导出）`)
-    assert.equal(entry[name].constructor.name, "AsyncFunction", `${name} 必须是 async 工厂`)
+/** 用假 fetch 跑一次 loader.fetch，返回它发出去的请求 */
+function capture() {
+  const calls = []
+  const original = globalThis.fetch
+  globalThis.fetch = async (url, init) => {
+    calls.push({ url: String(url), headers: init?.headers ?? {}, body: init?.body })
+    return new Response(JSON.stringify({ ok: true }), { status: 200, headers: { "content-type": "application/json" } })
   }
-})
-
-test("导出数 = 站点数（加一家必须加一行导出）", () => {
-  assert.equal(EXPECTED.length, SITE_LIST.length)
-})
-
-for (const [exportName, id] of EXPECTED) {
-  test(`${id}：只注册自己，config.models 非空且条目形状完整`, async () => {
-    const plugin = await entry[exportName]({ client: {} })
-    const cfg = {}
-    await plugin.config(cfg)
-    assert.deepEqual(Object.keys(cfg.provider), [id], "一个插件只能注册自己的 provider")
-
-    const declared = cfg.provider[id]
-    assert.equal(declared.name, SITES[id].name)
-    assert.equal(declared.api, SITES[id].base)
-    assert.equal(declared.npm, "@ai-sdk/openai-compatible")
-
-    const models = declared.models
-    assert.ok(models && Object.keys(models).length > 0, "config.models 不能为空（铁律 1）")
-
-    for (const [modelId, model] of Object.entries(models)) {
-      assert.equal(model.id, modelId)
-      assert.equal(model.api.url, SITES[id].base, "条目 api.url 必须指向本家上游")
-      assert.equal(model.api.npm, "@ai-sdk/openai-compatible")
-      // config 路径读 modalities，provider.models 路径读 capabilities —— 两个都要写
-      assert.ok(Array.isArray(model.modalities.input))
-      assert.deepEqual(model.modalities.output, ["text"])
-      for (const key of ["text", "image", "audio", "video", "pdf"]) {
-        assert.equal(typeof model.capabilities.input[key], "boolean", `${modelId}.capabilities.input.${key} 必须显式布尔`)
-      }
-      assert.equal(typeof model.capabilities.output.text, "boolean")
-    }
-  })
-
-  test(`${id}：登录是一条 api 型，且没有 authorize / prompts`, async () => {
-    const plugin = await entry[exportName]({ client: {} })
-    const methods = plugin.auth.methods
-    assert.equal(methods.length, 1)
-    assert.equal(methods[0].type, "api")
-    // 有 authorize 时宿主会把**输入框的值丢掉**只传 prompts 的答案；没有 authorize 才原样存 key
-    assert.equal(methods[0].authorize, undefined)
-    assert.equal(methods[0].prompts, undefined)
-    assert.ok(methods[0].label.length > 0)
-    assert.ok(methods[0].placeholder.includes("http"), "placeholder 必须给领取地址")
-    assert.equal(plugin.auth.provider, id)
-    assert.ok(plugin.auth.icon.startsWith("data:image/"), "图标必须内嵌")
-  })
-
-  test(`${id}：loader 指向本家上游，并显式带出站 UA`, async () => {
-    const plugin = await entry[exportName]({ client: {} })
-    const out = await plugin.auth.loader(async () => ({ type: "api", key: "sk-test" }), { id })
-    assert.equal(out.baseURL, SITES[id].base)
-    assert.equal(out.apiKey, "sk-test")
-    assert.equal(typeof out.fetch, "function")
-    assert.match(out.headers["user-agent"], /^OpenAI\//, "出站 UA 必须显式给，不能透传 magpie/<version>")
-  })
-
-  test(`${id}：没有 key 时的行为按 keyOptional 分叉`, async () => {
-    const plugin = await entry[exportName]({ client: {} })
-    const out = await plugin.auth.loader(async () => ({ type: "api", key: "" }), { id })
-    if (SITES[id].keyOptional) {
-      assert.equal(out.baseURL, SITES[id].base, "免 key 的站点留空也能用")
-    } else {
-      assert.deepEqual(out, {}, "要 key 的站点没 key 时不接管请求")
-    }
-  })
-
-  test(`${id}：checkin 报 inactive，而不是 failed`, async () => {
-    const plugin = await entry[exportName]({ client: {} })
-    const result = await plugin.auth.checkin(async () => ({ type: "api", key: "k" }), { id })
-    assert.equal(result.outcome, "inactive")
-  })
-
-  test(`${id}：provider.models 未登录时退回 seed，且 api.url 仍是本家`, async () => {
-    const plugin = await entry[exportName]({ client: {} })
-    const models = await plugin.provider.models({}, { auth: null })
-    assert.ok(Object.keys(models).length > 0)
-    for (const [modelId, model] of Object.entries(models)) {
-      assert.equal(model.id, modelId)
-      assert.equal(model.api.url, SITES[id].base)
-    }
-  })
+  return { calls, restore: () => (globalThis.fetch = original) }
 }
 
-test("只有 xkiro 有 usage 钩子；其余五家不注册（没有接口就不画假进度条）", async () => {
-  for (const [exportName, id] of EXPECTED) {
-    const plugin = await entry[exportName]({ client: {} })
-    if (id === "xkiro") {
-      assert.equal(typeof plugin.auth.usage, "function", "xkiro 有 /usage 接口")
-    } else {
-      assert.equal(plugin.auth.usage, undefined, `${id} 没有额度接口，不该有 usage 钩子`)
+test("入口只导出一个插件工厂，且以 Plugin 结尾", () => {
+  const names = Object.entries(entry)
+    .filter(([, value]) => typeof value === "function")
+    .map(([name]) => name)
+  assert.deepEqual(names, ["FreepoolAuthPlugin"])
+  assert.equal(FreepoolAuthPlugin.constructor.name, "AsyncFunction")
+})
+
+test("config 只注册 freepool，models 非空，且每条 api.url 指向自己那家", async () => {
+  const hooks = await plugin({ client: {} })
+  const cfg = {}
+  await hooks.config(cfg)
+  assert.deepEqual(Object.keys(cfg.provider), [PROVIDER])
+
+  const declared = cfg.provider[PROVIDER]
+  assert.equal(declared.npm, "@ai-sdk/openai-compatible")
+  const models = declared.models
+  assert.ok(Object.keys(models).length >= VENDOR_LIST.length, "至少每家一条 seed（铁律 1）")
+
+  for (const [id, model] of Object.entries(models)) {
+    const matched = vendorOfModel(id)
+    assert.ok(matched, `${id} 必须是 <vendor>/<model> 形状`)
+    // 宿主把 api.id 原样当请求里的 model 发出来（实测 2026-11-17），所以这里必须带前缀，
+    // loader 出站前再切回上游 id —— 前缀是唯一确定的分流依据
+    assert.equal(model.api.id, id, "api.id 与展示 id 一致（带渠道前缀）")
+    assert.equal(model.api.url, matched.vendor.base, "api.url 必须指向这一家自己的上游")
+    assert.equal(model.id, id)
+    for (const key of ["text", "image", "audio", "video", "pdf"]) {
+      assert.equal(typeof model.capabilities.input[key], "boolean", `${id}.capabilities.input.${key} 必须显式布尔`)
     }
+    assert.deepEqual(model.modalities.output, ["text"])
   }
 })
 
-test("六张卡片的图标互不相同", async () => {
-  const icons = []
-  for (const [exportName] of EXPECTED) {
-    const plugin = await entry[exportName]({ client: {} })
-    icons.push(plugin.auth.icon)
-  }
-  assert.equal(new Set(icons).size, icons.length, "图标重复 = 用户分不清是哪一家")
+test("登录是一条 api 型，无 authorize / 无 prompts", async () => {
+  const hooks = await plugin()
+  assert.equal(hooks.auth.provider, PROVIDER)
+  assert.equal(hooks.auth.methods.length, 1)
+  assert.equal(hooks.auth.methods[0].type, "api")
+  assert.equal(hooks.auth.methods[0].authorize, undefined)
+  assert.equal(hooks.auth.methods[0].prompts, undefined)
+  assert.match(hooks.auth.methods[0].placeholder, /=/, "placeholder 必须示范 <vendor>=<key>")
+  assert.ok(hooks.auth.icon.startsWith("data:image/"))
 })
 
-test("没有任何插件注册 chat.headers（这六家都不需要额外的会话头）", async () => {
-  for (const [exportName] of EXPECTED) {
-    const plugin = await entry[exportName]({ client: {} })
-    assert.equal(plugin["chat.headers"], undefined)
+test("loader 不给 baseURL（分流靠模型 api.url），但带出站 UA", async () => {
+  const hooks = await plugin()
+  const out = await hooks.auth.loader(async () => ({ type: "api", key: "llm7=abc" }), { id: PROVIDER })
+  assert.equal(out.baseURL, undefined)
+  assert.equal(out.apiKey, undefined)
+  assert.match(out.headers["user-agent"], /^OpenAI\//)
+  assert.equal(typeof out.fetch, "function")
+})
+
+test("usage 存在（读 xkiro），checkin 是 inactive", async () => {
+  const hooks = await plugin()
+  assert.equal(typeof hooks.auth.usage, "function")
+  const checkin = await hooks.auth.checkin(async () => ({ type: "api", key: "" }), { id: PROVIDER })
+  assert.equal(checkin.outcome, "inactive")
+})
+
+test("provider.models 在没有任何 key 时退回 seed，而不是空表", async () => {
+  const hooks = await plugin()
+  const models = await hooks.provider.models({}, { auth: null })
+  assert.ok(Object.keys(models).length > 0)
+})
+
+// ── 逐请求分流 ──────────────────────────────────────────────────────
+
+test("按模型前缀选上游与 key，并把带前缀的 id 换回上游 id", async () => {
+  const hooks = await plugin()
+  const loader = await hooks.auth.loader(
+    async () => ({ type: "api", key: "cloudflare=acct123:cf-token;groq=gsk_1;llm7=lm7" }),
+    { id: PROVIDER },
+  )
+  const { calls, restore } = capture()
+  try {
+    await loader.fetch("https://api.groq.com/openai/v1/chat/completions", {
+      method: "POST",
+      body: JSON.stringify({ model: "groq/llama-3.3-70b-versatile", messages: [{ role: "user", content: "hi" }] }),
+      headers: { "content-type": "application/json" },
+    })
+    await loader.fetch("https://api.cloudflare.com/client/v4/accounts/acct123/ai/v1/chat/completions", {
+      method: "POST",
+      body: JSON.stringify({ model: "cloudflare/@cf/moonshotai/kimi-k2.6" }),
+    })
+  } finally {
+    restore()
   }
+
+  assert.equal(calls.length, 2)
+  assert.equal(calls[0].headers.authorization, "Bearer gsk_1", "groq 的请求用 groq 的 key")
+  assert.equal(JSON.parse(calls[0].body).model, "llama-3.3-70b-versatile", "发给上游的 model 必须去掉前缀")
+  assert.equal(calls[1].headers.authorization, "Bearer cf-token", "account:token 形态只把 token 段发上去")
+  assert.equal(JSON.parse(calls[1].body).model, "@cf/moonshotai/kimi-k2.6", "上游 id 里的斜杠要保留")
+})
+
+test("前缀与 host 都认不出 → 404（宿主只搁置这个模型）", async () => {
+  const hooks = await plugin()
+  const loader = await hooks.auth.loader(async () => ({ type: "api", key: "llm7=x" }), { id: PROVIDER })
+  const res = await loader.fetch("https://example.invalid/v1/chat/completions", {
+    method: "POST",
+    body: JSON.stringify({ model: "nope/whatever" }),
+  })
+  assert.equal(res.status, 404)
+  const body = await res.json()
+  assert.match(body.error.message, /未知的模型 id/)
+})
+
+test("前缀丢了但 host 认得出：仍按 host 那家发", async () => {
+  const hooks = await plugin()
+  const loader = await hooks.auth.loader(async () => ({ type: "api", key: "xkiro=xk_1" }), { id: PROVIDER })
+  const { calls, restore } = capture()
+  try {
+    const res = await loader.fetch("https://api.xkiro.com/v1/chat/completions", {
+      method: "POST",
+      body: JSON.stringify({ model: "google/gemini-3.6-flash" }),
+    })
+    assert.equal(res.status, 200)
+  } finally {
+    restore()
+  }
+  assert.equal(calls[0].headers.authorization, "Bearer xk_1", "靠 host 认出是 xkiro")
+  assert.equal(JSON.parse(calls[0].body).model, "google/gemini-3.6-flash")
+})
+
+test("缺某家的 key → 401 且 x-magpie-sign-in: kept（不把整张卡标失效）", async () => {
+  const hooks = await plugin()
+  const loader = await hooks.auth.loader(async () => ({ type: "api", key: "llm7=x" }), { id: PROVIDER })
+  const res = await loader.fetch("https://api.cohere.ai/compatibility/v1/chat/completions", {
+    method: "POST",
+    body: JSON.stringify({ model: "cohere/command-a-plus-05-2026" }),
+  })
+  assert.equal(res.status, 401)
+  assert.equal(res.headers.get("x-magpie-sign-in"), "kept")
+  const body = await res.json()
+  assert.match(body.error.message, /cohere/, "错误里要点名是哪一家缺 key")
+  assert.match(body.error.message, /dashboard\.cohere\.com/, "并且给领取地址")
+})
+
+test("免 key 的家（llm7）不配 key 也能发出去", async () => {
+  const hooks = await plugin()
+  const loader = await hooks.auth.loader(async () => ({ type: "api", key: "" }), { id: PROVIDER })
+  const { calls, restore } = capture()
+  try {
+    const res = await loader.fetch("https://api.llm7.io/v1/chat/completions", {
+      method: "POST",
+      body: JSON.stringify({ model: "llm7/DeepSeek-V4-Flash-0731" }),
+    })
+    assert.equal(res.status, 200)
+  } finally {
+    restore()
+  }
+  assert.equal(calls[0].headers.authorization, undefined, "没 key 就别发空的 Authorization")
+})
+
+test("种子目录覆盖 15 家，每家一条，id 都可路由", () => {
+  const models = seedModels()
+  const covered = new Set(Object.keys(models).map((id) => vendorOfModel(id).vendor.id))
+  assert.equal(covered.size, VENDOR_LIST.length)
+  assert.deepEqual([...covered].sort(), [...VENDOR_IDS].sort())
+})
+
+test("VENDORS 里每条都必备 base / keyUrl / parse；Cloudflare 带 accountKey", () => {
+  for (const id of VENDOR_IDS) {
+    const vendor = VENDORS[id]
+    assert.match(vendor.base, /^https:\/\//, `${id}.base`)
+    assert.match(vendor.keyUrl, /^https:\/\//, `${id}.keyUrl`)
+    assert.equal(vendor.id, id)
+    assert.equal(typeof vendor.parse, "string")
+    assert.ok(Array.isArray(vendor.seed) && vendor.seed.length > 0, `${id} 要有 seed`)
+  }
+  assert.equal(VENDORS.cloudflare.accountKey, true)
+  assert.match(VENDORS.cloudflare.base, /\{account\}/)
 })

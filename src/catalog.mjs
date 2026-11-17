@@ -1,43 +1,40 @@
-// src/catalog.mjs —— 六家的模型目录、快照、以及两家的请求体清洗
+// src/catalog.mjs —— 15 家的目录合并、快照，以及两家上游的请求体清洗
 //
-// 三件事都在这儿，因为它们在真实故障里是同一个现场：目录拉不到、快照没写、
-// 请求体被上游拒 400 —— 三者的表现都是「这个插件装了但没用」。
+// 聚合之后目录有两条铁律：
+//   ① **只有配了 key（或免 key）的家才去拉** —— 没 key 还列出来，用户选了必然 401
+//   ② **一家失败不拖累其他家** —— 用 allSettled 逐家收，成功的照常进表；
+//      全失败才退回快照 / seed（返回空表等于告诉宿主「这家没模型」）
 
 import { fileOf, readJson, writeJson } from "./store.mjs"
-import { CLIENT_UA, SDK, entryOf, staticModels } from "./sites.mjs"
+import { CLIENT_UA, VENDOR_LIST, VENDORS, entryOf, seedModels } from "./vendors.mjs"
+import { hasKey, keyOf } from "./keys.mjs"
 
-/** 目录请求超时：上游都是网关，10 秒还不回就别让用户在卡片前等着 */
-const LIST_TIMEOUT_MS = 10_000
+const LIST_TIMEOUT_MS = 15_000
 
-export function snapshotFile(site) {
-  return fileOf("snapshot", { siteId: site.id })
+const num = (v) => (Number.isFinite(Number(v)) && Number(v) > 0 ? Number(v) : undefined)
+
+// ── 快照 ────────────────────────────────────────────────────────────
+
+export function snapshotFile() {
+  return fileOf("snapshot", { siteId: "freepool" })
 }
 
-/** 上次成功的目录。读不到就是「没有」，不抛（store 的三条规矩之一） */
-export function readSnapshot(site) {
-  const raw = readJson(snapshotFile(site), null)
+export function readSnapshot() {
+  const raw = readJson(snapshotFile(), null)
   const models = raw?.models && typeof raw.models === "object" ? raw.models : null
   if (!models) return null
-  // 快照是「原样回放」用的：把 api.url 重新绑到当前 base，改过 base 的旧快照也不会打到旧域名
-  const out = {}
-  for (const [id, entry] of Object.entries(models)) {
-    if (!entry || typeof entry !== "object") continue
-    out[id] = { ...entry, id, api: { id, url: site.base, npm: entry.api?.npm || SDK } }
-  }
-  return Object.keys(out).length ? out : null
+  return Object.keys(models).length ? models : null
 }
 
-export function writeSnapshot(site, models) {
+export function writeSnapshot(models) {
   try {
-    writeJson(snapshotFile(site), { base: site.base, at: new Date().toISOString(), models })
+    writeJson(snapshotFile(), { at: new Date().toISOString(), models })
   } catch {
-    // 快照写不进去不影响这次请求，下次再写
+    // 快照写不进去不影响这次请求
   }
 }
 
 // ── 各家 /models 的解析 ──────────────────────────────────────────────
-
-const num = (v) => (Number.isFinite(Number(v)) && Number(v) > 0 ? Number(v) : undefined)
 
 /** 上游常见的四种窗口写法：数字、对象包一层、limit 包一层 */
 function contextFrom(item) {
@@ -49,20 +46,17 @@ function contextFrom(item) {
   )
 }
 
-/** 能力字段各家拼写不同：布尔直接在 capabilities 里，或落在模态数组里 */
+/** 能力字段各家拼写不同：布尔在 capabilities 或顶层，或落在模态数组里 */
 function visionFrom(item) {
-  // 布尔在两处出现过：capabilities.vision（xKiro）与顶层 vision（NaraRoute）
   for (const flag of [item?.capabilities?.vision, item?.vision]) {
     if (typeof flag === "boolean") return flag
   }
-  const arrays = [item?.modalities?.input, item?.architecture?.input_modalities]
-  for (const list of arrays) {
+  for (const list of [item?.modalities?.input, item?.architecture?.input_modalities]) {
     if (Array.isArray(list) && list.some((m) => /image/i.test(String(m)))) return true
   }
   return false
 }
 
-/** 通用 OpenAI 形状：data[].id + 上面那几种拼写 */
 function parseOpenAI(raw) {
   const rows = Array.isArray(raw?.data) ? raw.data : Array.isArray(raw?.models) ? raw.models : []
   return rows
@@ -73,8 +67,7 @@ function parseOpenAI(raw) {
         id,
         name: String(item?.display_name ?? item?.name ?? id),
         context: contextFrom(item),
-        maxOutput:
-          num(item?.max_output_tokens) ?? num(item?.max_completion_tokens) ?? num(item?.limit?.output),
+        maxOutput: num(item?.max_output_tokens) ?? num(item?.max_completion_tokens) ?? num(item?.limit?.output),
         vision: visionFrom(item),
         reasoning: item?.capabilities?.reasoning === true || item?.reasoning === true,
       }
@@ -82,7 +75,7 @@ function parseOpenAI(raw) {
     .filter(Boolean)
 }
 
-/** LLM7：条目必须自报 model_type=chat / stream / tools_calling；缺字段的不列（不猜） */
+/** LLM7：条目要自报 model_type=chat / stream / tools_calling；缺字段的不列 */
 function parseLlm7(raw) {
   const rows = Array.isArray(raw?.data) ? raw.data : []
   return rows
@@ -96,7 +89,7 @@ function parseLlm7(raw) {
         id,
         name: String(item?.display_name ?? item?.name ?? id),
         context: contextFrom(item),
-        maxOutput: num(item?.max_output_tokens) ?? num(item?.max_completion_tokens),
+        maxOutput: num(item?.max_output_tokens),
         vision: visionFrom(item),
         reasoning: item?.capabilities?.reasoning === true || item?.reasoning === true,
       }
@@ -104,10 +97,7 @@ function parseLlm7(raw) {
     .filter(Boolean)
 }
 
-/** xKiro：能力在 capabilities 里，窗口在 context_length / max_output_tokens */
-function parseXkiro(raw) {
-  return parseOpenAI(raw)
-}
+const parseXkiro = parseOpenAI
 
 /** Cohere 兼容层：只有 id，没有能力字段 —— 不猜，全部按纯文本 */
 function parseCohere(raw) {
@@ -120,11 +110,7 @@ function parseCohere(raw) {
     .filter(Boolean)
 }
 
-/**
- * Hugging Face：上下文窗口**不按固定路径读**，而是看路由共识 ——
- * 只有当这条模型所有 live 的推理商给出的 context_length 完全一致时才认这个数。
- * 不一致说明它取决于具体后端，填任何一个都是猜。
- */
+/** Hugging Face：窗口只在所有 live 推理商给同一个数时才认 */
 function parseHuggingface(raw) {
   const rows = Array.isArray(raw?.data) ? raw.data : []
   return rows
@@ -133,16 +119,20 @@ function parseHuggingface(raw) {
       if (!id) return null
       const live = Array.isArray(item?.providers) ? item.providers.filter((p) => p?.status === "live") : []
       const windows = live.map((p) => num(p?.context_length))
-      const consensus =
-        windows.length > 0 && windows.every((w) => w && w === windows[0]) ? windows[0] : undefined
+      const consensus = windows.length > 0 && windows.every((w) => w && w === windows[0]) ? windows[0] : undefined
       const inputs = Array.isArray(item?.architecture?.input_modalities) ? item.architecture.input_modalities : []
-      return {
-        id,
-        name: String(item?.name ?? id),
-        context: consensus,
-        vision: inputs.includes("image"),
-        reasoning: false,
-      }
+      return { id, name: String(item?.name ?? id), context: consensus, vision: inputs.includes("image"), reasoning: false }
+    })
+    .filter(Boolean)
+}
+
+/** Cloudflare：不是 /models，是 /ai/models/search?format=openrouter */
+function parseCloudflare(raw) {
+  const rows = Array.isArray(raw?.result) ? raw.result : Array.isArray(raw?.data) ? raw.data : []
+  return rows
+    .map((item) => {
+      const id = String(item?.name ?? item?.id ?? "").trim()
+      return id ? { id, name: String(item?.display_name ?? item?.description ?? id) } : null
     })
     .filter(Boolean)
 }
@@ -153,73 +143,106 @@ const PARSERS = {
   xkiro: parseXkiro,
   cohere: parseCohere,
   huggingface: parseHuggingface,
+  cloudflare: parseCloudflare,
+}
+
+/** 各家的目录地址 */
+function listUrl(vendor, account) {
+  if (vendor.parse === "cloudflare") {
+    const root = vendor.root || vendor.base.split("/accounts/")[0]
+    return `${root}/accounts/${encodeURIComponent(account || "missing-account")}/ai/models/search?format=openrouter`
+  }
+  return `${vendor.base.replace(/\/+$/, "")}/models`
 }
 
 /**
- * 拉一次上游目录，转成 magpie 的模型表。
- *
- * 失败语义（三态，方向必须选对）：
- *   ① 整个接口失败 → 抛，调用方退回上次快照（**绝不返回空表**，那等于「这家没模型」）
- *   ② 接口成功但某条缺 id → 跳过那一条（不猜）
- *   ③ 401/403 → 抛带 signIn 的错误，让宿主标账号
+ * 拉一家的目录。失败一律抛，由调用方用 allSettled 兜。
+ * 401/403 不抛 signIn：聚合卡里一家的 key 坏掉，不该把整张卡（其他 14 家）标成登录失效。
  */
-export async function fetchLiveModels(site, key) {
-  const url = `${site.base.replace(/\/+$/, "")}/models`
+export async function fetchVendorModels(vendor, key, account = "") {
   const headers = { accept: "application/json", "user-agent": CLIENT_UA }
-  // 有的上游「带 key 反而拒绝」：nararoute 的 /models 只在完全匿名时放行（实测 2026-11-17，
-  // 带任何 Authorization 都回 401）。这类站点在站点表里写 listAuth: false。
-  if (key && site.listAuth !== false) headers.authorization = `Bearer ${key}`
+  // 有的上游「带 key 反而拒绝」：nararoute 的 /models 只在完全匿名时放行（实测 2026-11-17）
+  if (key && vendor.listAuth !== false) headers.authorization = `Bearer ${key}`
 
-  let res
-  try {
-    res = await fetch(url, { method: "GET", headers, signal: AbortSignal.timeout(LIST_TIMEOUT_MS) })
-  } catch (error) {
-    throw new Error(`${site.name} 目录请求失败：${String(error?.message || error)}`)
-  }
-
-  if (res.status === 401 || res.status === 403) {
-    throw Object.assign(new Error(`${site.name} 拒绝了这把 key（HTTP ${res.status}）`), { signIn: "expired" })
-  }
+  const res = await fetch(listUrl(vendor, account), {
+    method: "GET",
+    headers,
+    signal: AbortSignal.timeout(LIST_TIMEOUT_MS),
+  })
   if (!res.ok) {
-    throw new Error(`${site.name} 目录请求返回 HTTP ${res.status}`)
+    const hint = res.status === 401 || res.status === 403 ? "（key 不对或没有权限）" : ""
+    throw new Error(`${vendor.label} 返回 HTTP ${res.status}${hint}`)
   }
 
   const raw = await res.json().catch(() => null)
-  if (!raw) throw new Error(`${site.name} 目录返回的不是 JSON`)
+  if (!raw) throw new Error(`${vendor.label} 返回的不是 JSON`)
 
-  const rows = (PARSERS[site.parse] || parseOpenAI)(raw)
-  if (!rows.length) throw new Error(`${site.name} 目录里没有可用的 chat 模型`)
+  const rows = (PARSERS[vendor.parse] || parseOpenAI)(raw)
+  if (!rows.length) throw new Error(`${vendor.label} 没有可用的 chat 模型`)
 
   const out = {}
   for (const row of rows) {
-    out[row.id] = entryOf(site, row.id, {
+    const entry = entryOf(vendor, row.id, {
       name: row.name,
       context: row.context,
       maxOutput: row.maxOutput,
       vision: row.vision,
       reasoning: row.reasoning,
+      account,
     })
+    out[entry.id] = entry
   }
   return out
 }
 
-/** 目录钩子的统一出口：live → 快照 → seed，三层都不空 */
-export async function modelsFor(site, key) {
-  try {
-    const live = await fetchLiveModels(site, key)
-    writeSnapshot(site, live)
-    return live
-  } catch (error) {
-    // 登录被拒 → 交给宿主标账号，不要拿快照把「key 失效」盖成「看着还能用」
-    if (error?.signIn) throw error
-    // 目录暂时失败 → 上次快照优先，没有快照才退回 seed
-    return readSnapshot(site) ?? staticModels(site)
+/**
+ * 聚合目录：只拉「配了 key 或免 key」的家，逐家收结果。
+ *
+ * @returns {{models: object, ok: string[], failed: {id:string,error:string}[], skipped: string[]}}
+ */
+export async function fetchAllModels(parsedKeys) {
+  const targets = []
+  const skipped = []
+  for (const vendor of VENDOR_LIST) {
+    if (hasKey(parsedKeys, vendor.id)) targets.push(vendor)
+    else skipped.push(vendor.id)
   }
+
+  const results = await Promise.allSettled(
+    targets.map((vendor) => fetchVendorModels(vendor, keyOf(parsedKeys, vendor.id), parsedKeys.account)),
+  )
+
+  const models = {}
+  const ok = []
+  const failed = []
+  results.forEach((result, index) => {
+    const vendor = targets[index]
+    if (result.status === "fulfilled") {
+      ok.push(vendor.id)
+      Object.assign(models, result.value)
+      return
+    }
+    failed.push({ id: vendor.id, error: String(result.reason?.message || result.reason) })
+  })
+
+  return { models, ok, failed, skipped }
 }
 
-// ── 两家的请求体清洗 ────────────────────────────────────────────────
-//
-// 这些是「上游不认的字段」而不是「我们要改语义」，所以只删不改值。
+/** 目录钩子的统一出口：聚合 live → 快照 → seed，三层都不空 */
+export async function modelsFor(parsedKeys) {
+  try {
+    const { models, ok } = await fetchAllModels(parsedKeys)
+    if (ok.length) {
+      writeSnapshot(models)
+      return models
+    }
+  } catch {
+    // 落到底下的快照 / seed
+  }
+  return readSnapshot() ?? seedModels(parsedKeys?.account)
+}
+
+// ── 两家上游的请求体清洗 ────────────────────────────────────────────
 
 /** Cohere 兼容层明确不认的 10 个 body 字段 + 每条 message 的 name */
 const COHERE_UNSUPPORTED = [
@@ -235,7 +258,7 @@ const COHERE_UNSUPPORTED = [
   "top_logprobs",
 ]
 
-/** @returns {object|null} 改过就返回新对象，没改返回 null（调用方据此决定是否重算 content-length） */
+/** @returns {object|null} 改过就返回新对象，没改返回 null */
 export const REQUEST_QUIRKS = {
   cohere(body) {
     if (!body || typeof body !== "object") return null
@@ -261,3 +284,10 @@ export const REQUEST_QUIRKS = {
     return changed ? next : null
   },
 }
+
+/** 供 index.mjs 的 loader 用：某家在某次请求里要不要清洗 body */
+export function quirksOf(vendor) {
+  return vendor?.sanitize ? REQUEST_QUIRKS[vendor.sanitize] : null
+}
+
+export { VENDORS }

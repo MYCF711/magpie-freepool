@@ -85,9 +85,9 @@ export function windowsOf(payload) {
  * 401/403 → 抛带 signIn 的错误（宿主标账号），其它失败 → 返回 error 文案（卡片显示原因），
  * **不要**抛：抛出去宿主只记成「读取失败」，用户看不到到底是 key 不对还是上游挂了。
  */
-export async function fetchUsage(site, key, { uid } = {}) {
-  if (!key) return { error: `${site.name} 需要先填 key 才能读额度`, windows: [] }
-  const url = `${site.base.replace(/\/+$/, "")}/usage`
+export async function fetchUsage(vendor, key, { uid } = {}) {
+  if (!key) return { error: `${vendor.label} 需要先填 key 才能读额度`, windows: [] }
+  const url = `${vendor.base.replace(/\/+$/, "")}/usage`
 
   let res
   try {
@@ -101,13 +101,13 @@ export async function fetchUsage(site, key, { uid } = {}) {
   }
 
   if (res.status === 401 || res.status === 403) {
-    throw Object.assign(new Error(`${site.name} 拒绝了这把 key（HTTP ${res.status}）`), { signIn: "expired" })
+    throw Object.assign(new Error(`${vendor.label} 拒绝了这把 key（HTTP ${res.status}）`), { signIn: "expired" })
   }
-  if (!res.ok) return { error: `${site.name} 额度接口返回 HTTP ${res.status}`, windows: [] }
+  if (!res.ok) return { error: `${vendor.label} 额度接口返回 HTTP ${res.status}`, windows: [] }
 
   const payload = await res.json().catch(() => null)
   if (!payload || typeof payload !== "object") {
-    return { error: `${site.name} 额度接口返回的不是 JSON`, windows: [] }
+    return { error: `${vendor.label} 额度接口返回的不是 JSON`, windows: [] }
   }
 
   const windows = windowsOf(payload)
