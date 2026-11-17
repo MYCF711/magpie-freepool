@@ -13,7 +13,7 @@ import assert from "node:assert/strict"
 import { REQUEST_QUIRKS, fetchAllModels, fetchVendorModels } from "../src/catalog.mjs"
 import { hasKey, keyOf, parseKeys, summaryOf } from "../src/keys.mjs"
 import { windowsOf } from "../src/usage.mjs"
-import { VENDORS, vendorOfModel } from "../src/vendors.mjs"
+import { VENDORS, seedModels, vendorOfModel } from "../src/vendors.mjs"
 
 async function withFetch(stub, fn) {
   const original = globalThis.fetch
@@ -63,20 +63,32 @@ test("parseKeys：Cloudflare 的 account:token 拆出账号段，token 单独发
   assert.equal(hasKey(parsed, "cloudflare"), true)
 })
 
-test("hasKey：免 key 的家永远算配好，需要 key 的家没有就是没有", () => {
+test("hasKey：实测免 key 的三家永远算配好，其余没有就是没有", () => {
   const parsed = parseKeys("groq=gsk_1")
-  assert.equal(hasKey(parsed, "llm7"), true, "LLM7 免 key")
+  // 实测 2026-11-17：llm7 的 chat 层无凭据 200；kilo-auto/free 无凭据 200；
+  // opencode-zen 免费模型无凭据（429 = 免费额度用尽，不是缺凭据）
+  for (const id of ["llm7", "kilo", "opencode-zen"]) {
+    assert.equal(hasKey(parsed, id), true, `${id} 实测免 key`)
+  }
   assert.equal(hasKey(parsed, "groq"), true)
   assert.equal(hasKey(parsed, "xkiro"), false)
+})
+
+test("seed 目录：要 key 的渠道名字里带「需 key」，免 key 的不带", () => {
+  const models = seedModels()
+  for (const [id, entry] of Object.entries(models)) {
+    const vendor = VENDORS[id.slice(0, id.indexOf("/"))]
+    if (vendor.keyless) assert.equal(entry.name.includes("需 key"), false, `${id} 不该带需 key`)
+    else assert.equal(entry.name.includes("需 key"), true, `${id} 应提示还没配 key`)
+  }
 })
 
 test("summaryOf：卡片上说得清配了哪几家", () => {
   const parsed = parseKeys("groq=gsk_1;xkiro=xk_1")
   const text = summaryOf(parsed)
-  assert.match(text, /3 家已配置/)
-  assert.match(text, /llm7/)
-  assert.match(text, /groq/)
-  assert.match(text, /xkiro/)
+  // 2 把 key + 3 家实测免 key（llm7 / kilo / opencode-zen） = 5 家可用
+  assert.match(text, /5 家已配置/)
+  for (const id of ["llm7", "kilo", "opencode-zen", "groq", "xkiro"]) assert.match(text, new RegExp(id))
 })
 
 // ── 模型前缀 ────────────────────────────────────────────────────────

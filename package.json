@@ -1,6 +1,6 @@
 {
   "name": "magpie-freepool",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "One card, fifteen free-tier AI vendors: paste every key you have once (llm7 needs none) and pick any of their models from magpie. Models route by prefix — llm7/…, groq/…, xkiro/… — each entry pointing at its own upstream.",
   "type": "module",
   "main": "./index.mjs",

@@ -12,6 +12,7 @@ magpie plugin add github:MYCF711/magpie-freepool
 - **1 个供应商、15 个上游**：不用装 15 个插件、也不用点 15 次登录。provider id 是新的 `freepool`，
   不会和 magpie 内置的 `mistral` / `groq` / `google` 之类撞 id；即使同一个上游被两条路引用，
   两边的 key 也是各存各的。
+- **三家免 key 渠道装上就可用**（LLM7 / Kilo / OpenCode Zen）：key 留空直接点「登录」，它们会拉真实模型目录。
 - **一次粘贴配齐**：登录时贴一行 `groq=gsk_…;openrouter=sk-or-…;cloudflare=账号ID:token` 就行，
   没钱/没账号的那几家留空即可。也收 JSON。
 - **按前缀分流**：请求里的 `model` 决定去哪个上游、用哪把 key；发出去之前会把前缀去掉。
@@ -33,8 +34,8 @@ magpie plugin add github:MYCF711/magpie-freepool
 | [Groq](https://console.groq.com/keys) | `groq/` | 要 | 每模型每日上限 |
 | [Gemini](https://aistudio.google.com/apikey) | `gemini/` | 要 | AI Studio 免费层 |
 | [OpenRouter](https://openrouter.ai/keys) | `openrouter/` | 要 | `:free` 模型（日限额） |
-| [Kilo](https://kilo.ai) | `kilo/` | 要 | `kilo-auto/free` 档 |
-| [OpenCode Zen](https://opencode.ai/auth) | `opencode-zen/` | 要 | Zen 免费模型 |
+| [Kilo](https://kilo.ai) | `kilo/` | **不要**（`kilo-auto/free`） | `kilo-auto/free` 档免 key |
+| [OpenCode Zen](https://opencode.ai/auth) | `opencode-zen/` | **不要**（免费模型） | Zen 免费模型免 key |
 | [Ollama Cloud](https://ollama.com/settings/keys) | `ollama-cloud/` | 要 | Free 计划起始额度 |
 | [NVIDIA NIM](https://build.nvidia.com/settings/api-keys) | `nvidia/` | 要 | build.nvidia.com 免费额度 |
 

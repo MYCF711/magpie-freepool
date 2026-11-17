@@ -154,6 +154,8 @@ export const VENDORS = {
     label: "Kilo Gateway",
     base: "https://api.kilo.ai/api/gateway",
     keyUrl: "https://kilo.ai",
+    // 实测：kilo-auto/free 不带任何凭据也回 200 并给出正文（付费档才要登录）
+    keyless: true,
     parse: "openai",
     seed: ["kilo-auto/free"],
     note: "kilo-auto/free 走免费档",
@@ -163,6 +165,8 @@ export const VENDORS = {
     label: "OpenCode Zen",
     base: "https://opencode.ai/zen/v1",
     keyUrl: "https://opencode.ai/auth",
+    // 实测：免费模型不带凭据也能调（返回 429 是「免费额度用尽」，不是缺凭据）
+    keyless: true,
     parse: "openai",
     seed: ["gpt-5.3-codex"],
     note: "Zen 的免费模型",
@@ -290,7 +294,9 @@ export function seedModels(account = "") {
   const out = {}
   for (const vendor of VENDOR_LIST) {
     for (const upstreamId of vendor.seed || []) {
-      const entry = entryOf(vendor, upstreamId, { account })
+      // 需要 key 的渠道在名字里写清楚：未登录时用户一眼能看出哪几家还不能用
+      const name = vendor.keyless ? undefined : `${upstreamId} · 需 key`
+      const entry = entryOf(vendor, upstreamId, { name, account })
       out[entry.id] = entry
     }
   }
