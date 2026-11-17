@@ -122,8 +122,10 @@ export function keyOf(parsed, vendorId) {
 /** 卡片上显示「配了哪几家」，避免用户以为一次粘贴没生效 */
 export function summaryOf(parsed) {
   const ready = VENDOR_IDS.filter((id) => hasKey(parsed, id))
-  if (!ready.length) return "未配置任何 key"
-  return `${ready.length} 家已配置：${ready.join(", ")}`
+  // 认不出的名字必须说出来：静默忽略会让用户以为配上了，实际没生效
+  const ignored = Array.isArray(parsed?.unknown) && parsed.unknown.length ? `；认不出的名字已忽略：${parsed.unknown.join(", ")}` : ""
+  if (!ready.length) return `未配置任何 key${ignored}`
+  return `${ready.length} 家已配置：${ready.join(", ")}${ignored}`
 }
 
 /** 给前端的账号名：不把 key 写进卡片，只用家数 + 首尾几位做区分 */

@@ -83,6 +83,12 @@ test("seed 目录：要 key 的渠道名字里带「需 key」，免 key 的不�
   }
 })
 
+test("summaryOf：认不出的名字会被说出来，而不是静默忽略", () => {
+  const text = summaryOf(parseKeys("acme=zz;groq=gsk_1"))
+  assert.match(text, /认不出的名字已忽略/)
+  assert.match(text, /acme/)
+})
+
 test("summaryOf：卡片上说得清配了哪几家", () => {
   const parsed = parseKeys("groq=gsk_1;xkiro=xk_1")
   const text = summaryOf(parsed)
