@@ -1,5 +1,11 @@
 # 更新记录
 
+## 0.1.8 — 2026-11-17
+
+- 记录「自动领 key 不可行」的取证过程（docs/availability.md）：NaraRoute 明确只允许 Google 登录
+  （`Email registration is currently disabled`）、xKiro 需邮箱验证且无公开接口、其余各家都要账号。
+  → 「有 key」一栏的实测只能由持账号的人用 `probe:write` 完成，插件侧不伪造结论。
+
 ## 0.1.7 — 2026-11-17
 
 - **认不出的 key 名字不再被静默丢掉**：`groq=…;acme=zz` 里的 `acme` 会出现在卡片的

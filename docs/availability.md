@@ -41,6 +41,20 @@ GROQ_API_KEY=gsk_… OPENROUTER_API_KEY=sk-or-… node scripts/probe-vendors.mjs
 
 变量名是 `<渠道ID 大写、连字符换下划线>_API_KEY`，Cloudflare 用 `CLOUDFLARE_API_KEY="账号ID:token"`。
 
+## 为什么「有 key」这一栏仍然只能靠你（2026-11-17 实测的取证过程）
+
+自动领 key 的每一条路都试过了，结论是**没有无人值守的通道**：
+
+| 尝试 | 结果 |
+|---|---|
+| 本机环境变量 / magpie 已配置 providers / `D:MyKey` | 都没有这 12 家的 key |
+| NaraRoute `POST /api/auth/register` | 接口存在，但返回 `403 {"message":"Email registration is currently disabled. Please continue with Google."}` —— **只允许 Google 登录** |
+| xKiro `/register?plan=free` | 页面无验证码，但表单由 Next.js 前端提交到它自己的后端，需要邮箱验证；chunk 里搜不到公开的注册/发 key 接口 |
+| 常见发 key 路径（`/api/keys`、`/v1/keys`…） | 一律 `401`（存在但要登录态），没有「匿名发 key」的接口 |
+| Cloudflare / Groq / OpenRouter / Mistral / Gemini / HF / Cohere / SambaNova / Ollama Cloud / NVIDIA | 都要先有账号，控制台生成 key |
+
+所以「有 key」一栏只能由**持有账号的人**填：把 key 作为环境变量交给 `node scripts/probe-vendors.mjs --write`。
+
 ## 与代码的对应
 
 - `免 key 可用` 的三家在 `src/vendors.mjs` 里标 `keyless: true`，因此 `hasKey()` 恒为真、装上就能拉目录。
