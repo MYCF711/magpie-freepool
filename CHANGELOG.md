@@ -1,5 +1,14 @@
 # 更新记录
 
+## 0.1.5 — 2026-11-17
+
+- **证据表改成可重跑生成的**：新增 `scripts/probe-vendors.mjs`（`npm run probe:write`），
+  逐家发 `GET /models` + 一次 `POST /chat/completions`，把结果直接回写 `docs/availability.md` 的表格块。
+  给上环境变量（`GROQ_API_KEY`、`OPENROUTER_API_KEY`…）就同时把「有 key」两栏也测掉。
+- **新增 `tests/availability.test.mjs`**：把「表里的结论」和「代码里的 keyless 标记」锁成一致 ——
+  两边不一致（表过期或标错）CI 直接红，避免文档说能用、装上去用不了。
+- 不再手写证据表：手写的会过期，跑出来的不会。
+
 ## 0.1.4 — 2026-11-17
 
 - **`key_hint` 现在有真实作用**：开着（默认）时，把「你还没配 key 的那几家」也摆进模型列表，
